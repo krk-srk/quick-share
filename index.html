@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>QuickShare | Pro Mobile</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        * { -webkit-tap-highlight-color: transparent; }
+        html, body { height: 100%; overscroll-behavior-y: contain; }
+        .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
+        button:active { transform: scale(0.96); transition: transform 0.1s ease; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans">
+    <div id="app" class="max-w-xl mx-auto min-h-screen p-6">
+        <div id="view-landing" class="space-y-6 py-12 text-center">
+            <h1 class="text-4xl font-black text-blue-600 italic">QuickShare</h1>
+            <div class="bg-white p-6 rounded-3xl border shadow-sm space-y-4 text-left">
+                <input id="create-password" type="password" class="w-full p-4 rounded-2xl border bg-slate-50" placeholder="Set PIN (Optional)">
+                <div class="p-4 bg-slate-50 rounded-2xl flex justify-around text-[10px] font-bold">
+                    <label class="flex items-center gap-1"><input type="checkbox" id="perm-upload" checked> Upload</label>
+                    <label class="flex items-center gap-1"><input type="checkbox" id="perm-download" checked> Download</label>
+                    <label class="flex items-center gap-1 text-red-500"><input type="checkbox" id="perm-delete"> Delete</label>
+                </div>
+                <button onclick="createPortal()" class="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg">Start Portal</button>
+            </div>
+            <div class="flex gap-2">
+                <input id="join-input" class="flex-1 p-4 rounded-2xl border uppercase font-bold" placeholder="Room ID">
+                <button onclick="joinPortal()" class="bg-slate-900 text-white px-8 py-4 rounded-2xl font-bold">Join</button>
+            </div>
+            <div id="recent-portals-section" class="hidden text-left space-y-2 pt-4">
+                <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Recent Portals</p>
+                <div id="recent-list" class="flex flex-col gap-2"></div>
+            </div>
+        </div>
+
+        <div id="view-portal" class="hidden space-y-4">
+            <div class="bg-white p-5 rounded-3xl border shadow-sm space-y-4">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <span id="role-badge" class="text-[9px] font-black px-2 py-0.5 rounded uppercase">Guest</span>
+                            <span id="user-count-display" class="text-[9px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-100 uppercase">0 Online</span>
+                            <span id="timer-display" class="text-[9px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-100 uppercase tracking-tighter">--:--</span>
+                        </div>
+                        <h2 id="portal-id-display" class="text-2xl font-black tracking-widest">--</h2>
+                        <div class="flex gap-2 mt-2">
+                            <button onclick="sharePortalNative()" class="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[9px] font-bold shadow-sm active:bg-blue-700 flex items-center gap-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8m-16-6l7-7 7 7m-7-7v13"/></svg>
+                                Share
+                            </button>
+                            <button onclick="copyPortalLink()" class="bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg text-[9px] font-bold">Copy Link</button>
+                        </div>
+                    </div>
+                    <div class="flex flex-col items-end gap-2">
+                        <button onclick="exitPortal()" class="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold">Exit</button>
+                        <div id="qrcode" class="p-1 bg-white border rounded-lg"></div>
+                    </div>
+                </div>
+                <div id="owner-live-controls" class="hidden border-t pt-4 space-y-3 text-left">
+                    <div class="flex justify-between items-center">
+                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Admin Controls</p>
+                        <button onclick="destroyPortal()" class="text-[9px] font-bold text-white bg-red-600 px-2 py-1 rounded shadow-sm active:bg-red-800">Destroy Portal</button>
+                    </div>
+                    <div class="flex gap-4 text-[10px] font-bold">
+                        <label class="cursor-pointer"><input type="checkbox" class="live-perm" data-perm="canUpload" onchange="updateLivePermissions()"> Upload</label>
+                        <label class="cursor-pointer"><input type="checkbox" class="live-perm" data-perm="canDownload" onchange="updateLivePermissions()"> Download</label>
+                        <label class="cursor-pointer text-red-500"><input type="checkbox" class="live-perm" data-perm="canDelete" onchange="updateLivePermissions()"> Delete</label>
+                    </div>
+                </div>
+            </div>
+            <div id="file-list" class="space-y-2 pb-32"></div>
+            <div id="upload-section-container" class="hidden fixed bottom-0 left-0 right-0 p-6 bg-slate-50/80 backdrop-blur-md border-t border-slate-200 z-50 safe-area-bottom">
+                <label class="block w-full bg-blue-600 text-white text-center font-bold py-4 rounded-2xl cursor-pointer shadow-xl active:bg-blue-700 transition-transform">
+                    <input type="file" multiple class="hidden" onchange="uploadFiles(this.files)">
+                    Share a File
+                </label>
+            </div>
+        </div>
+    </div>
+    <div id="toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur text-white px-6 py-3 rounded-full opacity-0 transition-all pointer-events-none text-xs font-bold z-50 text-center"></div>
+    <script src="http://192.168.1.105:5000/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
