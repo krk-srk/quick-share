@@ -1,4 +1,4 @@
-const API_BASE = 'http://192.168.1.105:5000/api';
+const API_BASE = 'http://ec2-13-53-174-228.eu-north-1.compute.amazonaws.com/api';
 let socket, currentUser, activeRoomId, isOwner = false, portalPermissions = {}, timerInterval;
 
 function initApp() {
@@ -7,7 +7,8 @@ function initApp() {
     if(!savedUID) localStorage.setItem('qs_uid', currentUser.uid);
 
     try { 
-        socket = io('http://192.168.1.105:5000'); 
+        // Updated socket connection to your EC2 instance
+        socket = io('http://ec2-13-53-174-228.eu-north-1.compute.amazonaws.com'); 
         socket.on('user-count', (count) => {
             document.getElementById('user-count-display').innerText = `${count} Online`;
         });
@@ -22,6 +23,60 @@ function initApp() {
     else updateRecentList();
 }
 
+// --- FIXED DELETE FUNCTION ---
+window.deleteFile = async (fileId) => {
+    if (!confirm("Delete this file?")) return;
+    try {
+        const res = await fetch(`${API_BASE}/portal/${activeRoomId}/file/${fileId}`, {
+            method: 'DELETE'
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast("File deleted");
+            // Server will emit 'file-updated' via socket
+        }
+    } catch (e) {
+        showToast("Delete failed.");
+    }
+};
+
+// --- FIXED SHARE LOGIC ---
+window.sharePortalNative = async () => {
+    const joinUrl = window.location.origin + window.location.pathname + "?join=" + activeRoomId;
+    
+    // Note: Native share requires HTTPS. EC2 http:// links will fallback to copy.
+    if (navigator.share && window.isSecureContext) {
+        try {
+            await navigator.share({
+                title: 'QuickShare',
+                text: `Join my portal: ${activeRoomId}`,
+                url: joinUrl
+            });
+        } catch (err) {
+            window.copyPortalLink();
+        }
+    } else {
+        window.copyPortalLink();
+    }
+};
+
+window.copyPortalLink = () => {
+    const joinUrl = window.location.origin + window.location.pathname + "?join=" + activeRoomId;
+    navigator.clipboard.writeText(joinUrl).then(() => {
+        showToast("Link Copied!");
+    }).catch(() => {
+        // Legacy copy fallback
+        const el = document.createElement('textarea');
+        el.value = joinUrl;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        showToast("Link Copied!");
+    });
+};
+
+// --- PORTAL MANAGEMENT ---
 async function restoreSession(id) {
     try {
         const res = await fetch(`${API_BASE}/portal/${id}/verify`, {
@@ -60,7 +115,7 @@ window.createPortal = async () => {
             portalPermissions = { canUpload: true, canDownload: true, canDelete: true }; 
             enterPortal(data.portalId, Date.now()); 
         }
-    } catch(e) { showToast("Network Error: Unable to create portal."); }
+    } catch(e) { showToast("Portal creation failed."); }
 };
 
 window.joinPortal = async (manualId = null) => {
@@ -99,7 +154,15 @@ function enterPortal(id, createdAt) {
 
     socket.emit('join-portal', id);
     socket.on('file-updated', renderFiles);
-    new QRCode(document.getElementById("qrcode"), { text: window.location.origin + "?join=" + id, width: 64, height: 64 });
+    
+    const qrContainer = document.getElementById("qrcode");
+    qrContainer.innerHTML = '';
+    new QRCode(qrContainer, { 
+        text: window.location.origin + window.location.pathname + "?join=" + id, 
+        width: 64, 
+        height: 64 
+    });
+    
     startCountdown(createdAt);
     fetchFiles();
 }
@@ -116,13 +179,6 @@ function startCountdown(createdAt) {
     }, 1000);
 }
 
-function getFileIcon(type) {
-    if (type.includes('image')) return '🖼️';
-    if (type.includes('video')) return '🎥';
-    if (type.includes('pdf')) return '📄';
-    return '📁';
-}
-
 function renderFiles(files) {
     const list = document.getElementById('file-list');
     const canDown = isOwner || portalPermissions.canDownload;
@@ -130,12 +186,11 @@ function renderFiles(files) {
     list.innerHTML = files.map(f => `
         <div class="flex justify-between p-4 bg-white border rounded-2xl items-center shadow-sm">
             <div class="flex items-center gap-3 overflow-hidden">
-                <span>${getFileIcon(f.fileType)}</span>
                 <span class="text-sm font-bold truncate">${f.fileName}</span>
             </div>
             <div class="flex gap-2">
                 ${canDown ? `<button onclick="downloadFile('${f.id}', '${f.fileName}')" class="bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-black">GET</button>` : ''}
-                ${canDel ? `<button onclick="deleteFile('${f.id}')" class="text-red-600 font-mono">X</button>` : ''}
+                ${canDel ? `<button onclick="deleteFile('${f.id}')" class="text-red-600 font-mono p-2">✕</button>` : ''}
             </div>
         </div>`).join('');
 }
@@ -199,16 +254,6 @@ function updateRecentList() {
             <span class="text-[9px] font-bold text-blue-600 uppercase">Join →</span>
         </button>`).join('');
 }
-
-window.sharePortalNative = async () => {
-    const joinUrl = window.location.origin + "?join=" + activeRoomId;
-    if (navigator.share) await navigator.share({ title: 'QuickShare', url: joinUrl });
-    else copyPortalLink();
-};
-
-window.copyPortalLink = () => {
-    navigator.clipboard.writeText(window.location.origin + "?join=" + activeRoomId).then(() => showToast("Copied!"));
-};
 
 window.exitPortal = () => { if(confirm("Exit?")) { localStorage.removeItem('qs_active'); location.reload(); } };
 
